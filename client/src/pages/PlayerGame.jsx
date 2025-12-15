@@ -35,12 +35,56 @@ const PlayerGame = () => {
         }
     }, [status, timeUp, minutes, seconds]);
 
+    const [isHaloNotified, setIsHaloNotified] = useState(false);
+    const [isPageBlurred, setIsPageBlurred] = useState(false);
+
+    useEffect(() => {
+        const handleBlur = () => setIsPageBlurred(true);
+        const handleFocus = () => setIsPageBlurred(false);
+        const handleKeys = (e) => {
+            if (e.key === 'PrintScreen' || (e.ctrlKey && e.key === 'p') || (e.metaKey && e.shiftKey && e.key === 's')) {
+                setIsPageBlurred(true);
+                alert("Screenshots are disabled!");
+                setTimeout(() => setIsPageBlurred(false), 2000);
+            }
+        };
+
+        window.addEventListener('blur', handleBlur);
+        window.addEventListener('focus', handleFocus);
+        window.addEventListener('keyup', handleKeys);
+        window.addEventListener('keydown', handleKeys);
+
+        return () => {
+            window.removeEventListener('blur', handleBlur);
+            window.removeEventListener('focus', handleFocus);
+            window.removeEventListener('keyup', handleKeys);
+            window.removeEventListener('keydown', handleKeys);
+        };
+    }, []);
+
     const submitAnswer = (index) => { if (!answered && !waiting && !timeUp) { socket.emit('submit_answer', { pin, answerIndex: index }); setAnswered(true); } };
     const nextQuestion = () => { socket.emit('request_next_question', { pin }); };
 
+    const preventCopy = (e) => { e.preventDefault(); return false; };
+
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center p-4">
-            <div className="w-full max-w-2xl">
+        <div
+            className="min-h-screen flex flex-col items-center justify-center p-4 select-none relative"
+            onContextMenu={preventCopy}
+            onCopy={preventCopy}
+            onCut={preventCopy}
+            onPaste={preventCopy}
+        >
+            {isPageBlurred && (
+                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-2xl flex items-center justify-center text-center p-8">
+                    <div className="animate-pulse">
+                        <div className="text-6xl mb-4">⚠️</div>
+                        <h2 className="text-4xl font-black text-red-500 mb-2">Anti-Cheating Active</h2>
+                        <p className="text-gray-400">Please keep the quiz window focused.</p>
+                    </div>
+                </div>
+            )}
+            <div className={`w-full max-w-2xl transition-all duration-300 ${isPageBlurred ? 'blur-2xl grayscale' : ''}`}>
                 <div className="flex justify-between items-center mb-6">
                     <div className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full border border-white/10">
                         <span className="w-2 h-2 rounded-full bg-green-400"></span>
