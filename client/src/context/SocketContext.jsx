@@ -11,8 +11,9 @@ export const SocketProvider = ({ children }) => {
     const [socket, setSocket] = useState(null);
 
     useEffect(() => {
-        // In dev, assuming localhost:5000. In prod, would be relative or env var.
-        const newSocket = io('http://localhost:5000');
+        // Use environment variable for production, fallback to localhost for dev
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        const newSocket = io(apiUrl);
         setSocket(newSocket);
 
         return () => newSocket.close();

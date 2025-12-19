@@ -85,8 +85,8 @@ const HostDashboard = () => {
 
             const headers = {};
             if (token) headers['Authorization'] = `Bearer ${token}`;
-
-            const res = await fetch('http://localhost:5000/api/quizzes/generate', {
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+            const res = await fetch(`${apiUrl}/api/quizzes/generate`, {
                 method: 'POST',
                 headers, // Do NOT set Content-Type for FormData
                 body: formData
