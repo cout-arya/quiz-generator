@@ -11,8 +11,8 @@ export const SocketProvider = ({ children }) => {
     const [socket, setSocket] = useState(null);
 
     useEffect(() => {
-        // Use environment variable for production, fallback to localhost for dev
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        // Use environment variable for production, fallback to current origin for monorepo, or localhost for local dev
+        const apiUrl = import.meta.env.VITE_API_URL || '';
         const newSocket = io(apiUrl);
         setSocket(newSocket);
 
