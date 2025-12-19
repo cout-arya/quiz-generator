@@ -25,9 +25,9 @@ const PlayerJoin = () => {
 
     return (
         <div className="min-h-screen flex items-center justify-center p-4">
-            <div className="card-glass w-full max-w-md animate-fade-in text-center">
-                <div className="text-6xl mb-6">🎮</div>
-                <h2 className="text-3xl font-bold mb-8 bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
+            <div className="card-glass w-full max-w-md animate-fade-in text-center p-6 sm:p-10">
+                <div className="text-5xl sm:text-6xl mb-4 sm:mb-6">🎮</div>
+                <h2 className="text-2xl sm:text-3xl font-bold mb-6 sm:mb-8 bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                     Join Game Room
                 </h2>
 

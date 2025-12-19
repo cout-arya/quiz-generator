@@ -207,9 +207,9 @@ const PlayerGame = () => {
                 </div>
 
                 {status === 'lobby' && (
-                    <div className="card-glass text-center py-20 animate-fade-in">
-                        <div className="text-8xl mb-8 animate-bounce-slow">🎮</div>
-                        <h2 className="text-4xl font-black mb-4">You're In!</h2>
+                    <div className="card-glass text-center py-10 sm:py-20 animate-fade-in mx-auto w-full">
+                        <div className="text-6xl sm:text-8xl mb-6 sm:mb-8 animate-bounce-slow">🎮</div>
+                        <h2 className="text-3xl sm:text-4xl font-black mb-4">You're In!</h2>
                         <div className="flex justify-center items-center gap-3 text-gray-400">
                             <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
                             <div className="w-2 h-2 bg-primary rounded-full animate-bounce delay-100"></div>
@@ -224,33 +224,33 @@ const PlayerGame = () => {
                         {question ? (
                             <>
                                 {waiting ? (
-                                    <div className="card-glass text-center py-16">
+                                    <div className="card-glass text-center py-10 sm:py-16">
                                         {result?.isCorrect ? (
-                                            <div className="space-y-6">
-                                                <div className="text-8xl animate-bounce">✅</div>
+                                            <div className="space-y-4 sm:space-y-6">
+                                                <div className="text-6xl sm:text-8xl animate-bounce">✅</div>
                                                 <div>
-                                                    <h2 className="text-4xl font-black text-green-400 mb-2">Correct!</h2>
-                                                    <p className="text-green-400/60 font-mono">+1 Mark</p>
+                                                    <h2 className="text-3xl sm:text-4xl font-black text-green-400 mb-2">Correct!</h2>
+                                                    <p className="text-green-400/60 font-mono text-sm sm:text-base">+1 Mark</p>
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className="space-y-6">
-                                                <div className="text-8xl animate-pulse">❌</div>
+                                            <div className="space-y-4 sm:space-y-6">
+                                                <div className="text-6xl sm:text-8xl animate-pulse">❌</div>
                                                 <div>
-                                                    <h2 className="text-4xl font-black text-red-400 mb-2">Wrong!</h2>
-                                                    <p className="text-red-400/60">Better luck next time</p>
+                                                    <h2 className="text-3xl sm:text-4xl font-black text-red-400 mb-2">Wrong!</h2>
+                                                    <p className="text-red-400/60 text-sm sm:text-base">Better luck next time</p>
                                                 </div>
                                             </div>
                                         )}
-                                        <button onClick={nextQuestion} className="btn-primary mt-12 w-full max-w-xs text-lg">
+                                        <button onClick={nextQuestion} className="btn-primary mt-8 sm:mt-12 w-full max-w-[280px] sm:max-w-xs text-base sm:text-lg">
                                             Next Question ➔
                                         </button>
                                     </div>
                                 ) : (
-                                    <div className="space-y-8">
+                                    <div className="space-y-6 sm:space-y-8">
                                         <div>
-                                            <span className="text-sm font-bold text-primary uppercase tracking-wider mb-2 block">Question {question.current} / {question.total}</span>
-                                            <h2 className="text-3xl md:text-4xl font-bold leading-tight">{question.text}</h2>
+                                            <span className="text-[10px] sm:text-sm font-bold text-primary uppercase tracking-wider mb-1 sm:mb-2 block">Question {question.current} / {question.total}</span>
+                                            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold leading-tight">{question.text}</h2>
                                         </div>
 
                                         <div className="grid gap-4">
@@ -258,12 +258,12 @@ const PlayerGame = () => {
                                                 <button
                                                     key={i}
                                                     onClick={() => submitAnswer(i)}
-                                                    className="group w-full text-left p-6 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-primary/50 hover:scale-[1.02] transition-all duration-200 flex items-center gap-4"
+                                                    className="group w-full text-left p-4 sm:p-6 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-primary/50 hover:scale-[1.01] transition-all duration-200 flex items-center gap-3 sm:gap-4"
                                                 >
-                                                    <span className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center font-bold text-gray-400 group-hover:bg-primary group-hover:text-white transition-colors">
+                                                    <span className="shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-white/10 flex items-center justify-center font-bold text-sm sm:text-base text-gray-400 group-hover:bg-primary group-hover:text-white transition-colors">
                                                         {String.fromCharCode(65 + i)}
                                                     </span>
-                                                    <span className="text-xl">{opt}</span>
+                                                    <span className="text-lg sm:text-xl line-clamp-2">{opt}</span>
                                                 </button>
                                             ))}
                                         </div>
@@ -283,18 +283,18 @@ const PlayerGame = () => {
                     <div className="card-glass text-center py-16 animate-fade-in relative overflow-hidden">
                         <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-transparent pointer-events-none"></div>
                         <div className="relative z-10">
-                            <div className="text-8xl mb-6">🏁</div>
-                            <h2 className="text-5xl font-black mb-4 bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">
+                            <div className="text-6xl sm:text-8xl mb-4 sm:mb-6">🏁</div>
+                            <h2 className="text-4xl sm:text-5xl font-black mb-3 sm:mb-4 bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary px-4">
                                 {timeUp ? "Time's Up!" : "Quiz Complete!"}
                             </h2>
-                            <div className="my-12 p-8 bg-white/5 mx-6 rounded-2xl border border-white/10 inline-block min-w-[300px]">
-                                <p className="text-sm uppercase tracking-widest text-gray-400 mb-2">Final Marks</p>
-                                <h1 className="text-8xl font-black text-white tracking-tighter">{result?.score || 0}</h1>
+                            <div className="my-8 sm:my-12 p-6 sm:p-8 bg-white/5 mx-4 sm:mx-6 rounded-2xl border border-white/10 inline-block min-w-[260px] sm:min-w-[300px]">
+                                <p className="text-[10px] sm:text-sm uppercase tracking-widest text-gray-400 mb-1 sm:mb-2">Final Marks</p>
+                                <h1 className="text-6xl sm:text-8xl font-black text-white tracking-tighter">{result?.score || 0}</h1>
                             </div>
-                            <div className="flex gap-4 justify-center mt-8">
+                            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center mt-6 sm:mt-8 px-6">
                                 <button
                                     onClick={() => navigate('/')}
-                                    className="btn-primary px-8 py-4 text-lg flex items-center gap-2"
+                                    className="btn-primary w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-4 text-base sm:text-lg flex items-center justify-center gap-2"
                                 >
                                     <span>🏠</span>
                                     Back to Home
@@ -302,7 +302,7 @@ const PlayerGame = () => {
                                 {result?.quiz && (
                                     <button
                                         onClick={downloadSolutions}
-                                        className="px-8 py-4 text-lg font-bold flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-all shadow-lg hover:shadow-blue-500/20"
+                                        className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-4 text-base sm:text-lg font-bold flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-all shadow-lg hover:shadow-blue-500/20"
                                     >
                                         <span>📝</span>
                                         Download Answers

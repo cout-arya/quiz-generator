@@ -38,8 +38,8 @@ const HostLogin = () => {
 
     return (
         <div className="min-h-screen flex items-center justify-center p-4">
-            <div className="card-glass w-full max-w-md animate-fade-in">
-                <h2 className="text-3xl font-bold text-center mb-8 bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
+            <div className="card-glass w-full max-w-md animate-fade-in p-6 sm:p-10">
+                <h2 className="text-2xl sm:text-3xl font-bold text-center mb-6 sm:mb-8 bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                     {isLogin ? 'Welcome Back' : 'Create Account'}
                 </h2>
 
