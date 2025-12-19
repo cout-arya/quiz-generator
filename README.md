@@ -1,4 +1,4 @@
-# 🧠 Antigravity AI Quiz Builder
+# 🧠 AI Quiz Builder
 
 ![Banner](https://img.shields.io/badge/AI--Quiz--Builder-Powered%20by%20OpenAI-blue?style=for-the-badge&logo=openai)
 ![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
