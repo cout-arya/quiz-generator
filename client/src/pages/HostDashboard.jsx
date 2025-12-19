@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { useNavigate } from 'react-router-dom';
+import * as XLSX from 'xlsx';
 
 const HostDashboard = () => {
     // Mode is implicit now (both available)
@@ -17,12 +18,49 @@ const HostDashboard = () => {
     const socket = useSocket();
     const navigate = useNavigate();
 
+    const [notifications, setNotifications] = useState([]);
+    const [showEndSessionModal, setShowEndSessionModal] = useState(false);
+
     useEffect(() => {
         if (!socket) return;
         socket.on('game_created', ({ pin }) => { setPin(pin); setGameStatus('lobby'); });
         socket.on('player_joined', ({ players }) => setPlayers(players));
         socket.on('game_started', () => setGameStatus('active'));
-        socket.on('update_dashboard', ({ players }) => setPlayers(players));
+        socket.on('update_dashboard', ({ players, lastViolation }) => {
+            console.log('[Host] update_dashboard received, lastViolation:', lastViolation);
+            setPlayers(players);
+
+            if (lastViolation) {
+                console.log('[Host] Processing violation:', lastViolation.type);
+                let message = `⚠️ ${lastViolation.playerName} `;
+                switch (lastViolation.type) {
+                    case 'minimize_or_tab':
+                        message += "minimized or switched tabs!";
+                        break;
+                    case 'blur':
+                        message += "clicked away from the quiz!";
+                        break;
+                    case 'resize':
+                        message += "resized their window!";
+                        break;
+                    default:
+                        message += "left the quiz window!";
+                }
+
+                console.log('[Host] Creating notification:', message);
+                const newNote = {
+                    id: Date.now() + Math.random(),
+                    message: message,
+                    type: lastViolation.type,
+                    time: new Date().toLocaleTimeString()
+                };
+                setNotifications(prev => [newNote, ...prev].slice(0, 5));
+
+                setTimeout(() => {
+                    setNotifications(prev => prev.filter(n => n.id !== newNote.id));
+                }, 5000);
+            }
+        });
         return () => {
             socket.off('game_created'); socket.off('player_joined');
             socket.off('game_started'); socket.off('update_dashboard');
@@ -66,6 +104,60 @@ const HostDashboard = () => {
     const startGame = () => { if (socket && pin) socket.emit('start_game', { pin }); };
     const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
     const handleLogout = () => { localStorage.removeItem('token'); navigate('/'); };
+
+    const exportToExcel = () => {
+        if (players.length === 0) {
+            alert('No player data to export!');
+            return;
+        }
+
+        // Prepare data for Excel
+        const exportData = sortedPlayers.map((player, index) => ({
+            'Rank': index + 1,
+            'Player Name': player.name,
+            'Marks': player.score,
+            'Violations': player.violationCount || 0,
+            'Status': player.finished ? 'Completed' : 'In Progress'
+        }));
+
+        // Create worksheet
+        const ws = XLSX.utils.json_to_sheet(exportData);
+
+        // Set column widths
+        ws['!cols'] = [
+            { wch: 8 },  // Rank
+            { wch: 25 }, // Player Name
+            { wch: 10 }, // Marks
+            { wch: 12 }, // Violations
+            { wch: 15 }  // Status
+        ];
+
+        // Create workbook
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Quiz Results');
+
+        // Generate filename with timestamp
+        const timestamp = new Date().toISOString().slice(0, 10);
+        const filename = `Quiz_Results_${pin}_${timestamp}.xlsx`;
+
+        // Download
+        XLSX.writeFile(wb, filename);
+    };
+
+    const handleEndSession = () => {
+        setShowEndSessionModal(true);
+    };
+
+    const confirmEndSession = () => {
+        window.location.reload();
+    };
+
+    const exportAndEndSession = () => {
+        exportToExcel();
+        setTimeout(() => {
+            window.location.reload();
+        }, 500); // Small delay to allow download to start
+    };
 
     return (
         <div className="min-h-screen p-6 flex flex-col">
@@ -185,7 +277,7 @@ const HostDashboard = () => {
                                                         {isLoading ? (
                                                             <>
                                                                 <span className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin"></span>
-                                                                Generating Magic...
+                                                                Generating Quiz...
                                                             </>
                                                         ) : (
                                                             <>
@@ -228,7 +320,7 @@ const HostDashboard = () => {
                                 {gameStatus === 'active' && (
                                     <button
                                         className="mt-6 w-full px-4 py-2 bg-red-500/20 text-red-400 border border-red-500/50 rounded-lg hover:bg-red-500/30 transition-colors text-sm font-bold"
-                                        onClick={() => window.location.reload()}
+                                        onClick={handleEndSession}
                                     >
                                         End Session
                                     </button>
@@ -238,6 +330,16 @@ const HostDashboard = () => {
                             {gameStatus === 'lobby' && (
                                 <button onClick={startGame} className="btn-primary w-full py-4 text-xl shadow-xl shadow-primary/20 animate-bounce-slow">
                                     Start Game
+                                </button>
+                            )}
+
+                            {players.length > 0 && (
+                                <button
+                                    onClick={exportToExcel}
+                                    className="w-full px-4 py-3 bg-green-500/20 text-green-400 border border-green-500/50 rounded-lg hover:bg-green-500/30 transition-colors text-sm font-bold flex items-center justify-center gap-2"
+                                >
+                                    <span>📊</span>
+                                    Export to Excel
                                 </button>
                             )}
                         </div>
@@ -256,19 +358,30 @@ const HostDashboard = () => {
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {players.map((p, i) => (
-                                    <div key={p.id} className="bg-white/5 rounded-2xl p-4 flex items-center gap-4 border border-white/5 hover:border-white/10 transition-colors animate-fade-in">
-                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-xl shadow-lg ${i === 0 ? 'bg-yellow-500 text-black' : i === 1 ? 'bg-gray-300 text-black' : i === 2 ? 'bg-orange-700 text-white' : 'bg-white/10 text-gray-400'}`}>
+                                    <div
+                                        key={p.id}
+                                        className={`rounded-2xl p-4 flex items-center gap-4 border transition-all duration-300 animate-fade-in ${p.violationCount > 0 ? 'bg-red-500/10 border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.2)]' : 'bg-white/5 border-white/5 hover:border-white/10'}`}
+                                    >
+                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-xl shadow-lg ${i === 0 ? 'bg-yellow-500 text-black' : i === 1 ? 'bg-gray-300 text-black' : i === 2 ? 'bg-orange-700 text-white' : p.violationCount > 0 ? 'bg-red-500 text-white' : 'bg-white/10 text-gray-400'}`}>
                                             {i + 1}
                                         </div>
                                         <div>
-                                            <p className="font-bold text-lg">{p.name}</p>
-                                            <p className="text-sm text-primary font-mono">{p.score} pts {p.finished && '🏁'}</p>
+                                            <p className="font-bold text-lg flex items-center gap-2">
+                                                {p.name}
+                                                {p.violationCount > 0 && (
+                                                    <span className="text-red-500 text-sm font-black animate-pulse flex items-center gap-1">
+                                                        <span>⚠️</span>
+                                                        <span>{p.violationCount}</span>
+                                                    </span>
+                                                )}
+                                            </p>
+                                            <p className="text-sm text-primary font-mono">{p.score} marks {p.finished && '🏁'}</p>
                                         </div>
                                     </div>
                                 ))}
                                 {players.length === 0 && (
                                     <div className="col-span-full py-20 text-center text-gray-500 italic">
-                                        Join at localhost:5173/player/join with PIN: {pin}
+                                        Join the game with PIN: {pin}
                                     </div>
                                 )}
                             </div>
@@ -276,6 +389,62 @@ const HostDashboard = () => {
                     </div>
                 )}
             </main>
+
+            {/* Notification Toasts */}
+            <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 pointer-events-none">
+                {notifications.map(note => (
+                    <div
+                        key={note.id}
+                        className="bg-red-500 text-white px-6 py-4 rounded-2xl shadow-2xl animate-slide-in flex items-center gap-3 border border-red-400/50 backdrop-blur-md"
+                    >
+                        <span className="text-2xl">⚠️</span>
+                        <div>
+                            <p className="font-black text-sm uppercase tracking-tighter">Violation Detected</p>
+                            <p className="font-bold text-lg leading-tight">{note.message}</p>
+                            <p className="text-white/60 text-[10px] uppercase font-mono mt-1">{note.time}</p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* End Session Confirmation Modal */}
+            {showEndSessionModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in">
+                    <div className="card-glass p-8 max-w-md w-full mx-4 animate-slide-in">
+                        <div className="text-center mb-6">
+                            <div className="text-6xl mb-4">⚠️</div>
+                            <h2 className="text-3xl font-black mb-2">End Session?</h2>
+                            <p className="text-gray-400">Are you sure you want to end this quiz session?</p>
+                        </div>
+
+                        <div className="space-y-3">
+                            {players.length > 0 && (
+                                <button
+                                    onClick={exportAndEndSession}
+                                    className="w-full px-6 py-4 bg-green-500 hover:bg-green-400 text-black font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <span>📊</span>
+                                    Export Results & End Session
+                                </button>
+                            )}
+
+                            <button
+                                onClick={confirmEndSession}
+                                className="w-full px-6 py-4 bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/30 rounded-xl transition-colors font-bold"
+                            >
+                                End Session Without Export
+                            </button>
+
+                            <button
+                                onClick={() => setShowEndSessionModal(false)}
+                                className="w-full px-6 py-4 bg-white/5 hover:bg-white/10 rounded-xl transition-colors font-bold"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

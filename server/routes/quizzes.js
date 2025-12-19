@@ -3,7 +3,7 @@ const router = express.Router();
 const Quiz = require('../models/Quiz');
 const OpenAI = require('openai');
 const multer = require('multer');
-const pdf = require('pdf-extraction');
+const pdf = require('pdf-parse');
 const fs = require('fs');
 
 const upload = multer({ dest: 'uploads/' });
@@ -31,7 +31,7 @@ router.post('/generate', upload.single('pdf'), async (req, res) => {
             if (!topic) topic = "Uploaded Document Content";
         } catch (err) {
             console.error('PDF Parse Error:', err);
-            return res.status(500).json({ message: 'Failed to process PDF' });
+            return res.status(500).json({ message: 'Failed to process PDF', error: err.message });
         }
     }
 

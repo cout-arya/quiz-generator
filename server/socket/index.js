@@ -38,7 +38,8 @@ module.exports = (io) => {
                     name,
                     score: 0,
                     currentQuestionIndex: 0,
-                    finished: false
+                    finished: false,
+                    violationCount: 0
                 });
                 io.to(game.hostId).emit('player_joined', { players: game.players });
                 socket.emit('joined_game', { pin });
@@ -75,7 +76,10 @@ module.exports = (io) => {
                 sendQuestionToPlayer(io, player.id, question, player.currentQuestionIndex, game.quiz.questions.length);
             } else {
                 player.finished = true;
-                socket.emit('game_over', { score: player.score });
+                socket.emit('game_over', {
+                    score: player.score,
+                    quiz: game.quiz
+                });
                 // Notify host of completion
                 io.to(game.hostId).emit('update_dashboard', { players: game.players });
             }
@@ -93,8 +97,7 @@ module.exports = (io) => {
             const isCorrect = question.correctIndex === answerIndex;
 
             if (isCorrect) {
-                // Speed bonus could apply here based on timeLimit vs actual time
-                player.score += 100;
+                player.score += 1;
             }
 
             socket.emit('answer_result', { isCorrect, correctIndex: question.correctIndex, score: player.score });
@@ -102,6 +105,36 @@ module.exports = (io) => {
             // Update Host Dashboard Live
             io.to(game.hostId).emit('update_dashboard', {
                 players: game.players
+            });
+        });
+
+        // Player violation (tab switch/minimize)
+        socket.on('player_violation', ({ pin, type }) => {
+            console.log(`[Server] Received violation: ${type} from ${socket.id} for pin ${pin}`);
+            const game = games[pin];
+            if (!game) {
+                console.log(`[Server] Game not found for pin ${pin}`);
+                return;
+            }
+
+            const player = game.players.find(p => p.id === socket.id);
+            if (!player) {
+                console.log(`[Server] Player not found for socket ${socket.id}`);
+                return;
+            }
+
+            player.violationCount = (player.violationCount || 0) + 1;
+            player.lastViolationType = type; // Store the type of the last violation
+
+            console.log(`[Server] Updating dashboard for host ${game.hostId} with violation ${type}`);
+            // Notify host immediately
+            io.to(game.hostId).emit('update_dashboard', {
+                players: game.players,
+                lastViolation: {
+                    playerId: socket.id,
+                    playerName: player.name,
+                    type: type
+                }
             });
         });
 

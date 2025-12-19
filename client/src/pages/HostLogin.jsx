@@ -62,7 +62,7 @@ const HostLogin = () => {
                             value={password}
                             onChange={e => setPassword(e.target.value)}
                             required
-                            placeholder="••••••••"
+                            placeholder="Enter your password"
                         />
                     </div>
 

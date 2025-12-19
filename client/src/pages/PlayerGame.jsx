@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useLocation } from 'react-router-dom';
+import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
+import { saveAs } from 'file-saver';
 
 const PlayerGame = () => {
     const { pin } = useParams();
     const location = useLocation();
+    const navigate = useNavigate();
     const socket = useSocket();
     const [status, setStatus] = useState('lobby');
     const [question, setQuestion] = useState(null);
@@ -20,7 +23,7 @@ const PlayerGame = () => {
         socket.on('game_started', ({ totalTime }) => { setStatus('active'); setMinutes(totalTime || 10); setSeconds(0); });
         socket.on('new_question', (q) => { setQuestion(q); setAnswered(false); setResult(null); setWaiting(false); });
         socket.on('answer_result', (res) => { setResult(res); setWaiting(true); });
-        socket.on('game_over', ({ score }) => { setStatus('finished'); setResult({ score }); });
+        socket.on('game_over', ({ score, quiz }) => { setStatus('finished'); setResult({ score, quiz }); });
         return () => { socket.off('game_started'); socket.off('new_question'); socket.off('answer_result'); socket.off('game_over'); };
     }, [socket]);
 
@@ -35,12 +38,114 @@ const PlayerGame = () => {
         }
     }, [status, timeUp, minutes, seconds]);
 
+    // Warn user before refreshing during active quiz
+    useEffect(() => {
+        const handleBeforeUnload = (e) => {
+            if (status === 'active' && !timeUp) {
+                e.preventDefault();
+                e.returnValue = ''; // Required for Chrome
+                return ''; // Required for some browsers
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [status, timeUp]);
+
+    const downloadSolutions = async () => {
+        if (!result?.quiz) return;
+
+        const doc = new Document({
+            sections: [{
+                properties: {},
+                children: [
+                    new Paragraph({
+                        text: result.quiz.title,
+                        heading: HeadingLevel.TITLE,
+                        alignment: AlignmentType.CENTER,
+                    }),
+                    new Paragraph({
+                        text: `Your Final Score: ${result.score} Marks`,
+                        heading: HeadingLevel.HEADING_2,
+                        alignment: AlignmentType.CENTER,
+                        spacing: { after: 400 },
+                    }),
+                    ...result.quiz.questions.flatMap((q, i) => [
+                        new Paragraph({
+                            children: [
+                                new TextRun({ text: `${i + 1}. ${q.text}`, bold: true }),
+                            ],
+                            spacing: { before: 200, after: 100 },
+                        }),
+                        new Paragraph({
+                            children: [
+                                new TextRun({ text: "Options:", italics: true }),
+                            ],
+                        }),
+                        ...q.options.map((opt, optIdx) => new Paragraph({
+                            text: `- ${opt}`,
+                            indent: { left: 720 },
+                        })),
+                        new Paragraph({
+                            children: [
+                                new TextRun({ text: "Correct Answer: ", bold: true }),
+                                new TextRun({ text: q.options[q.correctIndex], color: "228B22", bold: true }),
+                            ],
+                            spacing: { after: 200 },
+                        }),
+                    ]),
+                ],
+            }],
+        });
+
+        const blob = await Packer.toBlob(doc);
+        saveAs(blob, `${result.quiz.title}_Solutions.docx`);
+    };
+
     const [isHaloNotified, setIsHaloNotified] = useState(false);
     const [isPageBlurred, setIsPageBlurred] = useState(false);
 
     useEffect(() => {
-        const handleBlur = () => setIsPageBlurred(true);
-        const handleFocus = () => setIsPageBlurred(false);
+        const recordViolation = (type) => {
+            // Debounce to avoid spamming the same event
+            const now = Date.now();
+            if (window._lastViolationType === type && now - (window._lastViolationTime || 0) < 1000) return;
+            window._lastViolationTime = now;
+            window._lastViolationType = type;
+
+            console.log(`[Player] recordViolation called: ${type}. pin: ${pin}, socket: ${socket?.id}`);
+            if (socket && pin) {
+                console.log(`[Player] Emitting player_violation: ${type}`);
+                socket.emit('player_violation', { pin, type });
+            }
+        };
+
+        const handleBlur = () => {
+            console.log('[Player] handleBlur fired, document.hidden:', document.hidden);
+            setIsPageBlurred(true);
+            // Always record blur violations - debouncing will prevent spam
+            recordViolation('blur');
+        };
+
+        const handleFocus = () => {
+            console.log('[Player] handleFocus fired');
+            setIsPageBlurred(false);
+        };
+
+        const handleVisibilityChange = () => {
+            console.log('[Player] handleVisibilityChange fired, document.hidden:', document.hidden);
+            if (document.hidden) {
+                console.log('[Player] Recording minimize_or_tab violation');
+                setIsPageBlurred(true);
+                recordViolation('minimize_or_tab');
+            }
+        };
+
+        const handleResize = () => {
+            console.log('[Player] handleResize fired');
+            recordViolation('resize');
+        };
+
         const handleKeys = (e) => {
             if (e.key === 'PrintScreen' || (e.ctrlKey && e.key === 'p') || (e.metaKey && e.shiftKey && e.key === 's')) {
                 setIsPageBlurred(true);
@@ -51,16 +156,20 @@ const PlayerGame = () => {
 
         window.addEventListener('blur', handleBlur);
         window.addEventListener('focus', handleFocus);
+        window.addEventListener('resize', handleResize);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
         window.addEventListener('keyup', handleKeys);
         window.addEventListener('keydown', handleKeys);
 
         return () => {
             window.removeEventListener('blur', handleBlur);
             window.removeEventListener('focus', handleFocus);
+            window.removeEventListener('resize', handleResize);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
             window.removeEventListener('keyup', handleKeys);
             window.removeEventListener('keydown', handleKeys);
         };
-    }, []);
+    }, [socket, pin]);
 
     const submitAnswer = (index) => { if (!answered && !waiting && !timeUp) { socket.emit('submit_answer', { pin, answerIndex: index }); setAnswered(true); } };
     const nextQuestion = () => { socket.emit('request_next_question', { pin }); };
@@ -121,7 +230,7 @@ const PlayerGame = () => {
                                                 <div className="text-8xl animate-bounce">✅</div>
                                                 <div>
                                                     <h2 className="text-4xl font-black text-green-400 mb-2">Correct!</h2>
-                                                    <p className="text-green-400/60 font-mono">+100 Points</p>
+                                                    <p className="text-green-400/60 font-mono">+1 Mark</p>
                                                 </div>
                                             </div>
                                         ) : (
@@ -179,8 +288,26 @@ const PlayerGame = () => {
                                 {timeUp ? "Time's Up!" : "Quiz Complete!"}
                             </h2>
                             <div className="my-12 p-8 bg-white/5 mx-6 rounded-2xl border border-white/10 inline-block min-w-[300px]">
-                                <p className="text-sm uppercase tracking-widest text-gray-400 mb-2">Final Score</p>
+                                <p className="text-sm uppercase tracking-widest text-gray-400 mb-2">Final Marks</p>
                                 <h1 className="text-8xl font-black text-white tracking-tighter">{result?.score || 0}</h1>
+                            </div>
+                            <div className="flex gap-4 justify-center mt-8">
+                                <button
+                                    onClick={() => navigate('/')}
+                                    className="btn-primary px-8 py-4 text-lg flex items-center gap-2"
+                                >
+                                    <span>🏠</span>
+                                    Back to Home
+                                </button>
+                                {result?.quiz && (
+                                    <button
+                                        onClick={downloadSolutions}
+                                        className="px-8 py-4 text-lg font-bold flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-all shadow-lg hover:shadow-blue-500/20"
+                                    >
+                                        <span>📝</span>
+                                        Download Answers
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
