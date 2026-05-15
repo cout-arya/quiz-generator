@@ -4,11 +4,11 @@
 | Field           | Value                                    |
 |-----------------|------------------------------------------|
 | **Product**     | QuizMaster.AI                            |
-| **Version**     | 1.0.0                                    |
+| **Version**     | 2.0.0                                    |
 | **Author**      | Arya Verma                               |
-| **Date**        | April 12, 2026                           |
+| **Date**        | May 15, 2026                             |
 | **Repository**  | `ai-quiz-builder` (monorepo)             |
-| **Status**      | Development / MVP Shipped                |
+| **Status**      | Production Ready / v2.0 Shipped          |
 
 ---
 
@@ -129,7 +129,7 @@ flowchart TD
 | **AI Provider**     | OpenAI API via [OpenRouter](https://openrouter.ai/api/v1)                            |
 | **Model**           | `gpt-3.5-turbo`                                                                     |
 | **Input: Topic**    | Free-text topic description (e.g., "The French Revolution, 10th grade difficulty")   |
-| **Input: PDF**      | Uploaded via `multer`, parsed with `pdf-parse`, truncated to 15,000 chars as context |
+| **Input: PDF**      | Processed via RAG pipeline (Chunking → Embedding → Vector Search) with OpenAI `text-embedding-3-small` |
 | **Configurable**    | Number of questions (1–20), Time limit (1–60 minutes)                                |
 | **Output Format**   | JSON: `{ title, questions: [{ text, options[4], correctIndex }] }`                   |
 | **Test Mode**       | Topic `"test"` bypasses AI and returns mock questions for development/testing         |
@@ -172,24 +172,25 @@ The entire multiplayer game session is orchestrated via WebSocket events. Game s
 | `player_violation`        | Player → Server  | `{ pin, type }`                                  | Reports a cheating violation event                |
 | `game_over`               | Server → Player  | `{ score, quiz }`                                | Sent when player finishes all questions            |
 
-#### Game State Model (In-Memory)
+#### Game State Model (MongoDB Session Model)
 
 ```javascript
-games[pin] = {
-    id: pin,               // 6-digit string
-    hostId: socketId,       // Socket ID of the host
-    quiz: Quiz,             // Full MongoDB Quiz document
+// Game state is persisted in MongoDB, allowing for robustness and post-game reporting
+{
+    pin: string,            // 6-digit string
+    hostId: ObjectId,       // Host user reference
+    quizId: ObjectId,       // Quiz reference
     players: [{
-        id: socketId,
+        socketId: string,
         name: string,
         score: number,
-        currentQuestionIndex: number,
         finished: boolean,
-        violationCount: number,
-        lastViolationType: string
+        violations: [{ type: string, timestamp: Date }],
+        violationCount: number
     }],
-    status: 'lobby' | 'active',
-    startTime: timestamp
+    status: 'lobby' | 'active' | 'completed',
+    startTime: Date,
+    endTime: Date
 }
 ```
 
@@ -251,10 +252,11 @@ The host dashboard has **two modes**:
 | Feature              | Format    | Library  | Content                                                     |
 |----------------------|-----------|----------|--------------------------------------------------------------|
 | **Host → Excel**     | `.xlsx`   | `xlsx`   | Rank, Player Name, Marks, Violations, Status (per player)    |
+| **Host → PDF**       | `.pdf`    | `pdfkit` | Professional session report with rankings and integrity scores|
 | **Player → Word**    | `.docx`   | `docx`   | Quiz title, score, all questions with options + correct answer |
 
 - Host can export at any time during or after the game.
-- The "End Session" modal offers "Export Results & End Session" as a combined action.
+- The "End Session" modal offers Excel & PDF export actions.
 - Players can download solutions **only after the game ends**.
 
 ---
@@ -310,11 +312,13 @@ graph TB
 | **Database**    | MongoDB Atlas (via Mongoose)                        | 9.0.1         |
 | **Realtime**    | Socket.io Server                                    | 4.8.1         |
 | **AI**          | OpenAI SDK (via OpenRouter)                         | 6.10.0        |
+| **RAG**         | OpenAI text-embedding-3-small + in-memory vector    | —             |
 | **Auth**        | JWT (`jsonwebtoken`) + bcryptjs                     | 9.0.3 / 3.0.3 |
 | **File Upload** | Multer                                              | 2.0.2         |
 | **PDF Parsing** | pdf-parse                                           | 1.1.1         |
-| **Export (Host)**| xlsx                                                | 0.18.5        |
+| **Export (Host)**| xlsx, pdfkit                                        | 0.18.5, 0.15.0|
 | **Export (Player)**| docx + file-saver                                | 9.5.1 / 2.0.5 |
+| **Infrastructure**| Docker, Nginx, GitHub Actions                      | —             |
 
 ### 5.3 Project Structure
 
@@ -459,15 +463,11 @@ ai-quiz-builder/                     # Monorepo root
 | #  | Item                                           | Severity | Notes                                                                |
 |----|------------------------------------------------|----------|----------------------------------------------------------------------|
 | 1  | **CORS is fully open** (`origin: '*'`)         | High     | Must be restricted to specific allowed origins in production.        |
-| 2  | **Game state is in-memory only**               | High     | Server restart loses all active games. No persistence or recovery.   |
-| 3  | **No auth middleware on quiz routes**           | Medium   | `/api/quizzes/generate` doesn't verify JWT — anyone can call it.     |
-| 4  | **No rate limiting**                           | Medium   | AI generation endpoint vulnerable to abuse/cost spikes.              |
-| 5  | **Socket disconnect handler is empty**         | Medium   | Player disconnects don't clean up game state properly.               |
-| 6  | **JWT secret is hardcoded as fallback**        | Medium   | `'secret_key_change_me'` in auth.js if env var is missing.           |
-| 7  | **No input validation/sanitization**           | Medium   | Topic text and username fields lack server-side validation.          |
-| 8  | **PDF context truncation is naive**            | Low      | Hard cut at 15K chars — could split mid-sentence.                    |
-| 9  | **OpenAI JSON parsing has no retry/fallback**  | Medium   | If AI returns non-JSON, the entire request fails with 500.           |
-| 10 | **No loading states for socket events**        | Low      | Player UI doesn't show loading between socket emit and response.     |
+| 2  | **No rate limiting**                           | Medium   | AI generation endpoint vulnerable to abuse/cost spikes.              |
+| 3  | **JWT secret is hardcoded as fallback**        | Medium   | `'secret_key_change_me'` in auth.js if env var is missing.           |
+| 4  | **No input validation/sanitization**           | Medium   | Topic text and username fields lack server-side validation.          |
+| 5  | **OpenAI JSON parsing has no retry/fallback**  | Medium   | If AI returns non-JSON, the entire request fails with 500.           |
+| 6  | **No loading states for socket events**        | Low      | Player UI doesn't show loading between socket emit and response.     |
 
 ---
 
@@ -478,8 +478,6 @@ ai-quiz-builder/                     # Monorepo root
 
 | Priority | Feature                              | Description                                                                        |
 |----------|--------------------------------------|------------------------------------------------------------------------------------|
-| P0       | **Auth Middleware**                   | Secure quiz generation and game creation behind JWT verification.                  |
-| P0       | **Persistent Game State**            | Store active games in Redis/MongoDB for crash recovery.                            |
 | P1       | **Question Bank**                    | Allow hosts to save, edit, and reuse quizzes from a personal question bank.        |
 | P1       | **Analytics Dashboard**              | Historical performance tracking — per-quiz, per-student, over-time trends.         |
 | P1       | **Team Mode**                        | Support team-based quiz competition in addition to individual play.                |
