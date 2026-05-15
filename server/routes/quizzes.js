@@ -10,6 +10,12 @@ const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const { body, query, validationResult } = require('express-validator');
 
+// RAG pipeline imports
+const { chunkPdf } = require('../services/pdfChunker');
+const { embedTexts } = require('../services/embedder');
+const { QuizVectorStore } = require('../services/vectorStore');
+const { generateRagQuiz } = require('../services/ragQuizGenerator');
+
 const upload = multer({ dest: 'uploads/' });
 
 const openai = new OpenAI({
@@ -77,27 +83,69 @@ router.post('/generate', auth, upload.single('pdf'),
         let { topic, numQuestions = 5, timeLimit = 20 } = req.body;
         numQuestions = parseInt(numQuestions) || 5;
         timeLimit = parseInt(timeLimit) || 20;
-        let contextText = '';
 
-        // Handle PDF Upload
+        // ─── PDF Upload → RAG Pipeline ───
         if (req.file) {
             try {
                 const dataBuffer = fs.readFileSync(req.file.path);
-                const data = await pdf(dataBuffer);
-                contextText = data.text.substring(0, 15000);
-                fs.unlinkSync(req.file.path);
-                if (!topic) topic = "Uploaded Document Content";
+
+                // Clean up uploaded file immediately
+                try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ }
+
+                // Step 1: Chunk the PDF
+                const chunks = await chunkPdf(dataBuffer);
+
+                // Step 2: Embed all chunks
+                const chunkTexts = chunks.map(c => c.text);
+                const embeddings = await embedTexts(chunkTexts);
+
+                // Step 3: Build vector store
+                const vectorStore = new QuizVectorStore(1536);
+                await vectorStore.addChunks(chunks, embeddings);
+
+                // Step 4: Generate quiz via RAG
+                const queryText = topic || 'Generate a comprehensive quiz from this document';
+                const ragResult = await generateRagQuiz({
+                    query: queryText,
+                    vectorStore,
+                    numQuestions,
+                    timeLimit
+                });
+
+                // Step 5: Save quiz with RAG metadata
+                const quiz = new Quiz({
+                    title: topic ? `${topic} Quiz` : 'Document Quiz',
+                    topic: topic || 'Uploaded Document',
+                    questions: ragResult.questions,
+                    totalTime: timeLimit,
+                    hostId: req.user.userId,
+                    source: 'ai',
+                    isDraft: true,
+                    ragUsed: true,
+                    sourceChunks: ragResult.sourceChunks,
+                    generationMethod: 'pdf-rag'
+                });
+
+                await quiz.save();
+                return res.json(quiz);
+
             } catch (err) {
-                console.error('PDF Parse Error:', err);
-                if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-                return res.status(500).json({ message: 'Failed to process PDF', error: err.message });
+                console.error('RAG Pipeline Error:', err);
+                if (req.file && fs.existsSync(req.file.path)) {
+                    try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ }
+                }
+                return res.status(500).json({
+                    message: 'Failed to process PDF with RAG pipeline',
+                    error: err.message
+                });
             }
         }
 
-        if (!topic && !contextText) return res.status(400).json({ message: 'Topic or PDF is required' });
+        // ─── Topic-based generation (unchanged behavior) ───
+        if (!topic) return res.status(400).json({ message: 'Topic or PDF is required' });
 
         // Force Mock for testing
-        if (topic && topic.toLowerCase() === 'test') {
+        if (topic.toLowerCase() === 'test') {
             const mockQuestions = [];
             const count = numQuestions;
             for (let i = 0; i < count; i++) {
@@ -115,6 +163,8 @@ router.post('/generate', auth, upload.single('pdf'),
                 hostId: req.user.userId,
                 source: 'ai',
                 isDraft: true,
+                ragUsed: false,
+                generationMethod: 'topic'
             });
             try {
                 await quiz.save();
@@ -125,29 +175,9 @@ router.post('/generate', auth, upload.single('pdf'),
         }
 
         try {
-            let prompt = '';
-            if (contextText) {
-                prompt = `Analyze the following text content and extract the core educational concepts, technical details, and factual information. 
-                 Then, generate a highly intelligent, conceptual quiz based strictly on the actual subject matter discussed in the text.
-                 
-                 IMPORTANT RULES:
-                 1. DO NOT ask meta-questions about the document itself (e.g., "What is the main topic of the uploaded document?", "How many pages?", "What is the summary?").
-                 2. DO NOT ask questions about the structure or formatting of the text.
-                 3. Focus entirely on testing the user's understanding of the key concepts, definitions, and facts presented in the content.
-                 4. Options must be plausible distractors, and the correct option must be unambiguously supported by the text.
-                 
-                 ${topic ? `Additional Focus/Topic Filter: Ensure the questions are strictly geared towards the theme of "${topic}".` : ''}
-                 
-                 Text Content: "${contextText}"
-                 
-                 Generate exactly ${numQuestions} rigorous multiple choice questions.`;
-            } else {
-                prompt = `Generate a highly intelligent and conceptual quiz about the topic: "${topic}". 
-                 Focus on testing core concepts, technical details, and important factual information.
-                 Generate exactly ${numQuestions} rigorous multiple choice questions with logically plausible distractors.`;
-            }
-
-            prompt += `
+            const prompt = `Generate a highly intelligent and conceptual quiz about the topic: "${topic}". 
+             Focus on testing core concepts, technical details, and important factual information.
+             Generate exactly ${numQuestions} rigorous multiple choice questions with logically plausible distractors.
     Return ONLY a JSON object with this structure: 
     {
       "title": "Quiz Title",
@@ -170,6 +200,8 @@ router.post('/generate', auth, upload.single('pdf'),
                 hostId: req.user.userId,
                 source: 'ai',
                 isDraft: true,
+                ragUsed: false,
+                generationMethod: 'topic'
             });
 
             await quiz.save();
@@ -204,7 +236,7 @@ router.get('/public', async (req, res) => {
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const total = await Quiz.countDocuments(filter);
         const quizzes = await Quiz.find(filter)
-            .select('title topic tags totalTime isPublic isDraft usageCount scheduledAt source createdAt questions')
+            .select('title topic tags totalTime isPublic isDraft usageCount scheduledAt source createdAt questions generationMethod ragUsed')
             .sort(sortOption)
             .skip(skip)
             .limit(parseInt(limit))
@@ -287,7 +319,7 @@ router.get('/', auth, async (req, res) => {
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const total = await Quiz.countDocuments(dbFilter);
         const quizzes = await Quiz.find(dbFilter)
-            .select('title topic tags totalTime isPublic isDraft usageCount scheduledAt source createdAt questions description')
+            .select('title topic tags totalTime isPublic isDraft usageCount scheduledAt source createdAt questions description generationMethod ragUsed')
             .sort(sortOption)
             .skip(skip)
             .limit(parseInt(limit))
@@ -333,6 +365,7 @@ router.post('/', auth,
                 description: description || '',
                 hostId: req.user.userId,
                 source: 'manual',
+                generationMethod: 'manual'
             });
             await quiz.save();
             res.status(201).json(quiz);
@@ -450,6 +483,7 @@ router.post('/:id/duplicate', auth, async (req, res) => {
             description: original.description,
             hostId: req.user.userId,
             source: original.source === 'manual' ? 'manual' : 'ai-edited',
+            generationMethod: original.generationMethod
         });
         await clone.save();
         res.status(201).json(clone);

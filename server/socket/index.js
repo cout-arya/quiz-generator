@@ -6,12 +6,12 @@ module.exports = (io) => {
     io.on('connection', (socket) => {
 
         // Host creates a game
-        socket.on('create_game', async ({ quizId }) => {
+        socket.on('create_game', async ({ quizId, customPin }) => {
             try {
                 const quiz = await Quiz.findById(quizId);
                 if (!quiz) return socket.emit('error', { message: 'Quiz not found' });
 
-                const pin = Math.floor(100000 + Math.random() * 900000).toString();
+                const pin = customPin || Math.floor(100000 + Math.random() * 900000).toString();
                 games[pin] = {
                     id: pin,
                     hostId: socket.id,

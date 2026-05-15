@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "cross-env NODE_ENV=test OPENAI_API_KEY=sk-test-mock jest --forceExit --detectOpenHandles",
+    "test:coverage": "cross-env NODE_ENV=test OPENAI_API_KEY=sk-test-mock jest --coverage --forceExit",
     "dev": "nodemon index.js",
     "start": "node index.js"
   },
@@ -12,6 +13,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@pinecone-database/pinecone": "^7.2.0",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
@@ -24,11 +26,16 @@
     "multer": "^2.0.2",
     "openai": "^6.10.0",
     "pdf-parse": "^1.1.1",
+    "pdfkit": "^0.18.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
+    "cross-env": "^10.1.0",
+    "jest": "^30.4.2",
+    "mongodb-memory-server": "^11.1.0",
+    "nodemon": "^3.1.11",
+    "supertest": "^7.2.2"
   }
 }

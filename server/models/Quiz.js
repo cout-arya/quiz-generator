@@ -7,6 +7,11 @@ const QuestionSchema = new mongoose.Schema({
     timeLimit: { type: Number, default: 20 }
 });
 
+const SourceChunkSchema = new mongoose.Schema({
+    text: String,
+    chunkIndex: Number
+}, { _id: false });
+
 const QuizSchema = new mongoose.Schema({
     title: String,
     topic: String,
@@ -24,6 +29,15 @@ const QuizSchema = new mongoose.Schema({
     description: { type: String, default: '' },
     source: { type: String, enum: ['ai', 'manual', 'ai-edited'], default: 'ai' },
     deletedAt: { type: Date, default: null },
+
+    // ─── RAG Pipeline Fields ───
+    ragUsed: { type: Boolean, default: false },
+    sourceChunks: [SourceChunkSchema],
+    generationMethod: {
+        type: String,
+        enum: ['topic', 'pdf-rag', 'pdf-direct', 'manual'],
+        default: 'topic'
+    }
 });
 
 // Index for common queries

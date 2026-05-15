@@ -198,16 +198,33 @@ const HostDashboard = () => {
         }
     };
 
-    const handleLaunch = (q) => {
+    const handleLaunch = async (q) => {
         setQuiz(q);
         setActiveTab('live');
+        
+        // Call API to create session in DB
+        try {
+            const res = await fetch(`${API_URL}/api/sessions/start`, {
+                method: 'POST',
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quizId: q._id })
+            });
+            const data = await res.json();
+            
+            // Pass the generated pin to the socket
+            if (socket) socket.emit('create_game', { quizId: q._id, customPin: data.gamePin });
+        } catch (e) {
+            console.error('Failed to create session:', e);
+            // Fallback to socket only if API fails
+            if (socket) socket.emit('create_game', { quizId: q._id });
+        }
+
         // Increment usage count
         fetch(`${API_URL}/api/quizzes/${q._id}`, {
             method: 'PUT',
             headers: { ...headers, 'Content-Type': 'application/json' },
             body: JSON.stringify({ usageCount: (q.usageCount || 0) + 1, isDraft: false }),
         }).catch(console.error);
-        if (socket) socket.emit('create_game', { quizId: q._id });
     };
 
     const handleEdit = (q) => navigate(`/host/quiz-builder/${q._id}`);
@@ -295,8 +312,28 @@ const HostDashboard = () => {
         setTimeout(() => document.body.removeChild(form), 1000);
     };
 
-    const confirmEndSession = () => { window.location.reload(); };
-    const exportAndEndSession = () => { exportToExcel(); setTimeout(() => window.location.reload(), 500); };
+    const handleEndSessionAPI = async () => {
+        if (!pin) return;
+        try {
+            await fetch(`${API_URL}/api/sessions/${pin}/end`, {
+                method: 'POST',
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ players: sortedPlayers })
+            });
+        } catch (err) {
+            console.error('Failed to end session:', err);
+        }
+    };
+
+    const confirmEndSession = async () => { 
+        await handleEndSessionAPI();
+        window.location.reload(); 
+    };
+    const exportAndEndSession = async () => { 
+        exportToExcel(); 
+        await handleEndSessionAPI();
+        setTimeout(() => window.location.reload(), 500); 
+    };
 
     // ─── Get violation breakdown for a player ───
     const getViolationTooltip = (player) => {
@@ -612,9 +649,39 @@ const HostDashboard = () => {
                                     )}
 
                                     {players.length > 0 && (
-                                        <button onClick={exportToExcel} className="w-full px-4 py-3 bg-green-500/20 text-green-400 border border-green-500/50 rounded-lg hover:bg-green-500/30 transition-colors text-sm font-bold flex items-center justify-center gap-2">
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg> Export to Excel
-                                        </button>
+                                        <>
+                                            <button onClick={exportToExcel} className="w-full px-4 py-3 bg-green-500/20 text-green-400 border border-green-500/50 rounded-lg hover:bg-green-500/30 transition-colors text-sm font-bold flex items-center justify-center gap-2">
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg> Export to Excel
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    fetch(`${API_URL}/api/sessions/${pin}/report/pdf`, {
+                                                        headers: { 'Authorization': `Bearer ${token}` }
+                                                    })
+                                                    .then(res => {
+                                                        if (!res.ok) throw new Error('Report not available');
+                                                        return res.blob();
+                                                    })
+                                                    .then(blob => {
+                                                        const url = window.URL.createObjectURL(blob);
+                                                        const a = document.createElement('a');
+                                                        a.href = url;
+                                                        a.download = `QuizMaster-Report-${pin || 'session'}-${new Date().toISOString().slice(0, 10)}.pdf`;
+                                                        document.body.appendChild(a);
+                                                        a.click();
+                                                        window.URL.revokeObjectURL(url);
+                                                        document.body.removeChild(a);
+                                                    })
+                                                    .catch(err => {
+                                                        console.error('PDF download error:', err);
+                                                        alert('PDF report is not available for this session. End the session first to generate a report.');
+                                                    });
+                                                }}
+                                                className="w-full px-4 py-3 bg-purple-500/20 text-purple-400 border border-purple-500/50 rounded-lg hover:bg-purple-500/30 transition-colors text-sm font-bold flex items-center justify-center gap-2"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg> Download PDF Report
+                                            </button>
+                                        </>
                                     )}
                                 </div>
 
